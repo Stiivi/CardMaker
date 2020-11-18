@@ -2,6 +2,12 @@
 
 OmniGraffle template and script to generate cards from data.
 
+Features:
+
+- merge data property values with graphic's text
+- style graphics based on a data property from visual style prototype
+- export individual cards as individual files
+
 ## Installation and Requirements
 
 Requires OmniGraffle version ≥ 7.18.
@@ -18,6 +24,15 @@ To install the script in OmniGraflle do the following steps:
 1. Open the _CardMaker.graffle_ document
 2. Select menu _Automation_ → _Create Cards_
 3. Cards are generated in the sheet named `sheet`
+
+You can export cards as PDFs or any other format individually:
+
+1. Select the canvas named `sheet`
+2. Menu _File_ → _Export…_ or `Cmd+Opt+E`
+3. Chose your format: PNG, PDF, ...
+5. Check ✅ _Export from artboards only_
+
+This will generate one file per card with filename being the card's name.
 
 ## Template Document
 
