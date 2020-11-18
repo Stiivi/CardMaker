@@ -1,0 +1,7 @@
+name,type,text
+Staff,item,"Wooden staff, good walking support."
+Robe,item,Protects from heavy rains and cold winds.
+Key,item,Opens some doors.
+Gold,resource,Purchase items or bribe gatekeepers.
+Bash,attack,Hit enemies or doors.
+Fireball,spell,Ball of fire flying through the air.

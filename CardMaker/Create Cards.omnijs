@@ -1,0 +1,312 @@
+/*{
+    "author": "Stefan Urbanek",
+    "targets": ["omnigraffle"],
+    "type": "action",
+    "identifier": "com.mycompany.Untitled Action",
+    "version": "0.1",
+    "description": "A plug-in that creates cards",
+    "label": "Create Cards",
+    "mediumLabel": "Create Cards",
+    "paletteLabel": "Create Cards",
+}*/
+(() => {
+    
+    // Document pre-requisites:
+    //
+    // - Canvas 'template' – canvas containing card prototype(s)
+    // - Graphics group 'card' in canvas 'template' – card prototype
+    // - Canvas 'card' – fully managed canvas that will contain newly created
+    //     card. Contents of this canvas will be replaced for every new card
+    //     being created.
+    
+    var action = new PlugIn.Action(function(selection) {
+        cardsFromFilePicker()
+        
+        function cardsFromFilePicker() {
+            let cardsFileURL = null
+            let cards = []
+            let picker = new FilePicker()
+            picker.folders = false
+            picker.multiple = false
+            // picker.types = [FileType.JSON]
+
+            picker.show().then(function(urls) {
+                cardsFileURL = urls[0]
+                cardsFromURL(cardsFileURL)
+            })
+        }
+        
+        function cardsFromURL(url) {
+            let cards = []
+            console.log("URL:", url)
+            url.fetch(function(data) {
+                let result = JSON.parse(data.toString())
+                cards = result["cards"]
+                createAndLayoutCards(cards)
+            },
+            function() {
+                throw Error("Failed loading cards")
+
+            })
+        }
+
+        function createAndLayoutCards(cards) {
+            let point = Point.zero
+            let prototype = getCardPrototype()
+            console.log("Cards:", cards.length)
+            console.log("Got proto ", prototype)
+            console.log("    card width : ", prototype.geometry.width)
+            console.log("    card height: ", prototype.geometry.height)
+
+            let padding = new Point(10, 10)
+            let columnsPerPage = 2
+            let offsetX = prototype.geometry.width + padding.x
+            let offsetY = prototype.geometry.height + padding.y
+            
+            let sheetCanvas = canvasWithName("sheet")
+            sheetCanvas.removeAll()
+            
+            let cursor = Point.zero
+            let column = 0
+
+            for (const info of cards) {
+                let card = createCard(info)
+                placeCard(info, card, cursor)
+                if(column < columnsPerPage) {
+                    cursor.x = cursor.x + offsetX
+                    column += 1
+                }
+                else {
+                    cursor.x = 0
+                    cursor.y = cursor.y + offsetY
+                    column = 0
+                }
+            }
+        }
+
+        // Create a card in canvas 'card'. All objects in the canvas is removed
+        // before creating the card.
+        //
+        function createCard(info) {
+            console.log("Creating card:", info["name"])
+            let cardCanvas = canvasWithName("card")
+            if (cardCanvas == null) {
+                // TODO: Create one.
+                fatalError("Construction canvas 'card' does not exist.")
+            }
+
+            cardCanvas.removeAll()
+            
+            let prototype = getCardPrototype()
+            let card = prototype.duplicateTo(Point.zero, cardCanvas)
+
+            mergeTextByName(info, card.graphics)
+            mergeStyles(info, card.graphics)
+                        
+            return card
+        }
+                
+        // Set style of every graphic to a template style. The template style
+        // is derived from card's property which name is stored in
+        // graphic's data key `styleProperty`. Graphics without
+        // `styleProperty` user data will be ignored.
+        //
+        // Example: We want to set a color of the card based on the card type.
+        // We can have three card types: attack, defense, resource.
+        // 1. Card type is stored in the `type` property.
+        // 2. On the template canvas we have three styled objects with name
+        //    "attack", "defense" and "resource".
+        // 3. We set the data property `styleProperty` of colored box in the
+        //    card template to `type` (because of #2)
+        //
+        // Prerequisite: graphic has a data key `styleProperty`.
+        function mergeStyles(obj, graphics) {
+            for (const graphic of graphics) {
+                let styleProperty = graphic.userData.styleProperty
+                if(styleProperty == null) {
+                    // We ignore objects that are not to be styled.
+                    continue
+                }
+                
+                let styleName = obj[styleProperty]
+                if(styleName == null) {
+                    // There is no style name, so we are not styling
+
+                    // Note: I think we do not need to use "default" style
+                    // as the default style is already the style of the object
+                    // in the template.
+                    continue
+                }
+                
+                // Find the object from which we are going to copy the style.
+                //
+                let style = styleWithName(styleName)
+                if(style == null) {
+                    console.log("WARNING: unknown style", styleName)
+                    continue
+                }
+                
+                let strokeProperties = [
+                    "strokeCap", "strokeColor", "strokeJoin", "strokePattern",
+                    "strokeThickness", "strokeType", "cornerRadius"
+                ]
+                let lineProperties = [
+                    "lineType"
+                ]
+                let shadowProperties = [
+                    "shadowColor", "shadowFuzziness", "shadowVector"
+                ]
+                let fillProperties = [
+                    "blendColor", "blendFraction", "fillColor", "fillType",
+                    "gradientAngle", "gradientCenter", "gradientColor",
+                    "tripleBlend"
+                ]
+                let shapeProperties = [ "shape", "shapeControlPoints", "shapeVertices" ]
+                let imageProperties = [
+                   "image", "imageOpacity", "imagePage", "imageScale",
+                ]
+                let textProperties = [
+                                      "fontName",
+                    "textColor", "textFlow", "textHorizontalAlignment",
+                    "textHorizontalPadding", "textRotation", "textRotationIsRelative",
+                    "textSize", "textVerticalPadding", "textWraps"
+                        ]
+                
+                let allGraphicStyleProperties =
+                        strokeProperties
+                            .concat(lineProperties)
+                            .concat(shadowProperties)
+                            .concat(fillProperties)
+                            // .concat(shapeProperties)
+                            .concat(imageProperties)
+                            .concat(textProperties)
+                
+                for (property of allGraphicStyleProperties) {
+                    graphic[property] = style[property]
+                }
+
+                // graphic.text = obj[graphic.name] ?? ""
+            }
+
+        }
+        
+        // Return all graphics that represent a style. Graphics that represent
+        // a style is a graphic that has user property `type` set to `style`.
+        //
+        function allStyleGraphics(canvasName) {
+            let template = canvasWithName(canvasName ?? "template")
+            let f= template.allGraphicsWithUserDataForKey("style", "type")
+            return f
+        }
+        
+        // Return a style graphics with name `name`.
+        function styleWithName(name) {
+            let styles = allStyleGraphics("template")
+            return styles.find(obj => obj.name == name)
+        }
+        
+        // Set text of objects in `graphics` to a property value in object `obj`
+        // for the same key as graphic's name.
+        //
+        function mergeTextByName(obj, graphics) {
+            for (const graphic of graphics) {
+                if(graphic.name == null) {
+                    continue
+                }
+                graphic.text = obj[graphic.name] ?? ""
+            }
+        }
+        
+        function placeCard(info, card, location) {
+            let sheetCanvas = canvasWithName("sheet")
+            if (sheetCanvas == null) {
+                fatalError("Target canvas 'sheet' does not exist.")
+            }
+
+            let placedCard = card.duplicateTo(location, sheetCanvas)
+            
+            // TODO: This is a workaround. OmniGraffle displaces the first card
+            // FIXME: This does not work
+            placedCard.geometry.x = location.x
+            placedCard.geometry.y = location.y
+
+            console.log("Placing", card.name, "at", location)
+            console.log("   placed at", placedCard.geometry)
+
+            // Create artboard frame for per-card export
+            let artboard = sheetCanvas.layerWithName("artboard")
+            if (artboard != null) {
+                let shape = artboard.newShape()
+                shape.geometry = placedCard.geometry
+                shape.name = info.name
+            }
+        }
+        
+        // Get a prototype of a card from the canvas named "template".
+        // Returns Group representing the card that can be duplicated and
+        // modified.
+        //
+        function getCardPrototype() {
+            let docView = document.windows[0].selection.view
+            let template = canvasWithName("template")
+            
+            if (template == null) {
+                fatalError("Canvas 'template' does not exist.")
+            }
+            let templateCard = template.graphicWithName("card")
+
+            if (templateCard == null) {
+                fatalError("There is no object with name 'card' in the template canvas.")
+            }
+            if (!(templateCard instanceof Group)) {
+                fatalError("Template card object is not a Group.")
+            }
+            return templateCard
+        }
+        
+        // Get the first canvas with name `name` in the document
+        //
+        function canvasWithName(name) {
+            return canvases.find(canvas => canvas.name == name)
+        }
+
+        // MARK: OmniGraffle Extensions
+        // ==========================================================
+        //
+        
+        // Returns first graphics with given name in a group.
+        Group.prototype.graphicsWithName = function(name) {
+            return this.graphics.find(obj => obj.name == name)
+        }
+        
+        // Remove all objects in the canvas.
+        //
+        Canvas.prototype.removeAll = function() {
+            for (let graphic of this.graphics) {
+                graphic.remove()
+            }
+        }
+
+        // Return first layer with given name
+        //
+        Canvas.prototype.layerWithName = function(name) {
+            return this.layers.find(layer => layer.name == name)
+        }
+        
+        function fatalError(message) {
+            let alert = new Alert("Error", message)
+            alert.addOption("Abort")
+            alert.show()
+            throw Error(message)
+        }
+    });
+
+    // If needed, uncomment, and add a function that returns true if the current selection is appropriate for the action.
+    /*
+    action.validate = function(selection){
+
+    };
+    */
+        
+    return action;
+})();
